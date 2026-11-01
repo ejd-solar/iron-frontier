@@ -1,0 +1,59 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Iron Frontier – diagnostics</title>
+<style>body{margin:0;padding:12px;background:#111;color:#eee;font:18px/1.4 Arial,sans-serif}h1{font-size:22px;color:#fc4;margin:4px 0 10px}
+.r{padding:8px;border-bottom:1px solid #333;word-break:break-word}.k{color:#9ab;font-size:14px;display:block}.ok{color:#5f5}.bad{color:#f66}.wait{color:#fd5}
+button{font-size:20px;padding:12px 16px;margin:8px 8px 8px 0;border-radius:8px;border:0;background:#c70;color:#fff}#b2{background:#36c}pre{white-space:pre-wrap;font-size:13px;background:#000;padding:8px;border:1px solid #444}
+iframe{width:100%;height:240px;border:1px solid #444;background:#000}</style></head><body>
+<h1>Iron Frontier diagnostics</h1>
+<div id="nojs" class="r bad">JavaScript is NOT running in this browser view.</div>
+<div id="out"></div>
+<button id="b1">Clear cache &amp; reset → play</button><button id="b2">Copy report</button>
+<div class="r"><span class="k">Live game test (loads the real game in a frame and presses START):</span><iframe id="gf"></iframe></div>
+<pre id="rep"></pre>
+<script>
+(function(){
+var W=window,D=document,rows={},errs=[],order=[];
+D.getElementById('nojs').style.display='none';
+function esc(t){return String(t).replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c]})}
+function set(k,v,cls){if(!rows[k]){var d=D.createElement('div');d.className='r';D.getElementById('out').appendChild(d);rows[k]=d;order.push(k);}rows[k].innerHTML='<span class="k">'+esc(k)+'</span><span class="'+(cls||'')+'">'+esc(v)+'</span>';rows[k].txt=v;rep();}
+function rep(){var s='';for(var i=0;i<order.length;i++)s+=order[i]+': '+rows[order[i]].txt+'\n';if(errs.length)s+='\nERRORS:\n'+errs.join('\n');D.getElementById('rep').textContent=s;}
+W.onerror=function(m,f,l,c){errs.push(m+' @ '+(f||'?')+':'+l+':'+c);set('Errors on this page',errs.length+' (see report)','bad');};
+function t(k,fn){try{var r=fn();set(k,r[0],r[1]?'ok':'bad');}catch(e){set(k,'ERROR: '+(e&&e.message||e),'bad');}}
+set('JavaScript running','yes','ok');
+t('User agent',function(){return[navigator.userAgent,1]});
+t('Chrome version',function(){var m=navigator.userAgent.match(/Chrome\/(\d+)/),s=navigator.userAgent.match(/SamsungBrowser\/([\d.]+)/),wv=/; wv\)/.test(navigator.userAgent);return[(m?m[1]:'not Chrome')+(s?'  (Samsung Internet '+s[1]+')':'')+(wv?'  [Android WebView / in-app browser]':''),m&&+m[1]>=58]});
+t('Screen',function(){return[innerWidth+'×'+innerHeight+' CSS px, DPR '+(W.devicePixelRatio||1)+', screen '+screen.width+'×'+screen.height,1]});
+t('Page',function(){return[location.href+(W.top!==W?'  (inside a frame!)':''),W.top===W]});
+t('Canvas 2D',function(){var c=D.createElement('canvas');c.width=2000;c.height=1000;var g=c.getContext('2d');if(!g)return['getContext(2d) returned null',0];g.fillRect(0,0,10,10);return['ok',1]});
+t('WebGL',function(){var c=D.createElement('canvas'),g=c.getContext('webgl')||c.getContext('experimental-webgl');return[g?'ok':'not available (game does not need it)',1]});
+t('localStorage',function(){var k='if_diag';localStorage.setItem(k,'1');var v=localStorage.getItem(k);localStorage.removeItem(k);return[v=='1'?'ok':'not working',v=='1']});
+t('Modern JS (ES2017)',function(){new Function('async function a(){await 1};const {x,...r}={x:1,y:2};class A{};return `t${1}`');return['supported',1]});
+t('Optional chaining / ?? (ES2020)',function(){try{new Function('var a=null;return a?.b??1');return['supported',1]}catch(e){return['NOT supported (game is down-levelled, should be fine)',1]}});
+function sw(){try{if(!('serviceWorker' in navigator)){set('Service worker','not supported','wait');return;}var c=navigator.serviceWorker.controller;
+ navigator.serviceWorker.getRegistrations().then(function(rs){var s=[];for(var i=0;i<rs.length;i++)s.push(rs[i].scope+(rs[i].active?' [active]':'')+(rs[i].waiting?' [WAITING update]':'')+(rs[i].installing?' [installing]':''));set('Service worker',(c?'controls this page':'not controlling this page')+' | registrations: '+(s.join(', ')||'none'),'ok');},function(e){set('Service worker','error '+e,'bad')});
+ if(W.caches)caches.keys().then(function(k){set('Caches',k.join(', ')||'none',1?'ok':'');},function(e){set('Caches','error '+e,'bad')});}catch(e){set('Service worker','ERROR: '+e.message,'bad');}}
+sw();
+t('Last start on the real page (steps)',function(){var c=JSON.parse(localStorage.getItem('if_crumb_top')||'null');var h=JSON.parse(localStorage.getItem('if_crumb_hist')||'[]');if(!c)return['no record',1];return[c.st+' ('+Math.round((+new Date-c.at)/1000)+'s ago, v'+c.v+') | '+h.join(' > '),/running|menu/.test(c.st)];});
+t('Last game session reached',function(){var c=JSON.parse(localStorage.getItem('if_crumb')||'null');if(!c)return['no record',1];var ago=Math.round((+new Date-c.at)/1000);return[c.st+' ('+ago+'s ago, v'+c.v+')',c.st=='running'||c.st=='menu'];});
+function xhr(u,cb){try{var x=new XMLHttpRequest();x.open('GET',u+(u.indexOf('?')<0?'?':'&')+'t='+(+new Date),true);x.onload=function(){cb(x.status,x.responseText)};x.onerror=function(){cb(0,'')};x.send();}catch(e){cb(-1,String(e))}}
+xhr('../version.json',function(s,b){var v='';try{v=JSON.parse(b);set('Server build',v.version+' / '+v.build,'ok');W.__srv=v;}catch(e){set('Server build','HTTP '+s+' '+String(b).slice(0,80),'bad');}});
+set('game.js download','loading…','wait');
+xhr('../game.js',function(s,b){if(s!=200){set('game.js download','HTTP '+s,'bad');return;}set('game.js download',(b.length/1024|0)+' KB','ok');
+ var t0=+new Date;try{new Function(b);set('game.js parse','ok ('+(+new Date-t0)+' ms)','ok');}catch(e){set('game.js parse','FAILED: '+e.name+': '+e.message+(e.lineNumber?' line '+e.lineNumber:''),'bad');}});
+// script-tag load into an isolated blank frame, capturing errors with file + line
+(function(){var f=D.createElement('iframe');f.style.display='none';D.body.appendChild(f);try{var w=f.contentWindow,d=w.document;d.open();d.write('<!DOCTYPE html><body></body>');d.close();var le=[];w.onerror=function(m,fi,l,c){le.push(m+' @ '+String(fi).split('/').pop()+':'+l+':'+c);return true};
+ var s=d.createElement('script');s.src='../game.js?t='+(+new Date);s.onload=function(){set('game.js <script> load','loaded'+(le.length?' – first error (expected outside the real page): '+le[0]:' with no errors'),'ok');};s.onerror=function(){set('game.js <script> load','FAILED to load (network/CSP)','bad');};d.body.appendChild(s);}catch(e){set('game.js <script> load','ERROR '+e.message,'bad');}})();
+// real game in a frame: read its own error log, press START
+(function(){var f=D.getElementById('gf');set('Real game','loading…','wait');f.src='../index.html?fresh=diag'+(+new Date);var t0=+new Date;
+ f.onload=function(){setTimeout(function(){try{var w=f.contentWindow,G=w.G;var be=(w.IFBootErrs||[]).join(' | ');
+  if(!w.IFReady){set('Real game','did NOT finish loading. Boot errors: '+(be||'none')+(G?' | G.errs: '+G.errs.map(function(e){return e.ph+':'+e.m}).join(' | '):''),'bad');return;}
+  set('Real game','loaded v'+G.VERSION+' build '+w.IF_BUILD+(W.__srv&&W.__srv.build!=w.IF_BUILD?'  ⚠ OLD BUILD (stale cache)':''),'ok');
+  try{(G.goFire||G.startGame)();}catch(e){set('START press','threw: '+e.message,'bad');}
+  setTimeout(function(){try{var ok=G.started&&G.t>0.3;set('START press',ok?'battle running (t='+G.t.toFixed(1)+'s, '+(G.frameN||0)+' frames, canvas '+w.document.getElementById('c').width+'×'+w.document.getElementById('c').height+')':'battle NOT running. started='+G.started+' t='+G.t+' errors: '+(G.errs||[]).map(function(e){return e.ph+':'+e.m}).join(' | '),ok);
+   var ov=w.document.getElementById('errov');if(ov&&ov.style.display=='block')set('Game error screen',ov.textContent.slice(0,400),'bad');}catch(e){set('START press','ERROR '+e.message,'bad');}},2500);
+ }catch(e){set('Real game','ERROR reading frame: '+e.message,'bad');}},2500);};})();
+D.getElementById('b1').onclick=function(){var b=this;b.textContent='Resetting…';var n=0;function go(){if(n++)return;location.replace('../index.html?fresh='+(+new Date));}
+ try{if(navigator.serviceWorker)navigator.serviceWorker.getRegistrations().then(function(rs){var p=[];for(var i=0;i<rs.length;i++)p.push(rs[i].unregister());return Promise.all(p)}).then(function(){return W.caches?caches.keys().then(function(k){var p=[];for(var i=0;i<k.length;i++)p.push(caches['delete'](k[i]));return Promise.all(p)}):0}).then(go,go);else go();}catch(e){go();}setTimeout(go,2500);};
+D.getElementById('b2').onclick=function(){var t=D.getElementById('rep').textContent;try{navigator.clipboard.writeText(t);this.textContent='Copied ✓';}catch(e){var r=D.createRange();r.selectNode(D.getElementById('rep'));getSelection().removeAllRanges();getSelection().addRange(r);}};
+})();
+</script></body></html>
